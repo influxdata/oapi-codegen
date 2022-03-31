@@ -257,6 +257,70 @@ func getConditionOfResponseName(statusCodeVar, responseName string) string {
 	}
 }
 
+// getJSONResponseTypeDefinitions returns only ResponseTypeDefinitions with JSON content type
+func getJSONResponseTypeDefinitions(op *OperationDefinition) []ResponseTypeDefinition {
+	var jsonTds []ResponseTypeDefinition
+	tds, err := op.GetResponseTypeDefinitions()
+	if err != nil {
+		panic(err)
+	}
+	for _, td := range tds {
+		if  StringInArray(td.ContentTypeName, contentTypesJSON) {
+			jsonTds = append(jsonTds, td)
+		}
+	}
+	return jsonTds
+}
+
+// get2xxResponseTypeDefinition returns JSON response type definition with 2xx status code.
+// returns nil if there is multiple 2xx responses.
+func get2xxResponseTypeDefinition(op *OperationDefinition) *ResponseTypeDefinition {
+	var tds2xx ResponseTypeDefinition
+	tds := getJSONResponseTypeDefinitions(op)
+	for _, td := range tds {
+		if strings.HasPrefix(td.ResponseName, "2") {
+			if StringInArray(td.ContentTypeName, contentTypesJSON) {
+				if tds2xx.ResponseName != "" {
+					return nil
+				}
+				tds2xx = td
+			}
+		}
+	}
+
+	if tds2xx.ResponseName == "" || tds2xx.Schema.TypeDecl() == "interface{}" {
+		return nil
+	}
+	return &tds2xx
+}
+
+// hasEmpty2xxResponse checks if there is an empty 2xx response (mostly 204)
+func hasEmpty2xxResponse(op *OperationDefinition) bool {
+	for n, r := range op.Spec.Responses {
+		if r.Value != nil && r.Value.Content == nil && strings.HasPrefix(n, "2") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasSingle2xxJSONResponse checks if operation has only one JSON response with 2xx status code
+func hasSingle2xxJSONResponse(op *OperationDefinition) bool {
+	return get2xxResponseTypeDefinition(op) != nil
+}
+
+// hasValidOrNoBody checks if operation has body with definition or
+func hasValidOrNoBody(op *OperationDefinition) bool {
+	return (op.HasBody() && len(op.Bodies) > 0) || !op.HasBody()
+}
+
+// hasValidRequestAndResponse  checks if operation has valid or no body and has single JSON response or an empty response
+func hasValidRequestAndResponse(op *OperationDefinition) bool {
+	return hasValidOrNoBody(op) && (hasEmpty2xxResponse(op) || hasSingle2xxJSONResponse(op))
+}
+
+
+
 // This outputs a string array
 func toStringArray(sarr []string) string {
 	return `[]string{"` + strings.Join(sarr, `","`) + `"}`
@@ -270,23 +334,27 @@ func stripNewLines(s string) string {
 // This function map is passed to the template engine, and we can call each
 // function here by keyName from the template code.
 var TemplateFunctions = template.FuncMap{
-	"genParamArgs":               genParamArgs,
-	"genParamTypes":              genParamTypes,
-	"genParamNames":              genParamNames,
-	"genParamFmtString":          ReplacePathParamsWithStr,
-	"swaggerUriToEchoUri":        SwaggerUriToEchoUri,
-	"swaggerUriToChiUri":         SwaggerUriToChiUri,
-	"swaggerUriToGinUri":         SwaggerUriToGinUri,
-	"lcFirst":                    LowercaseFirstCharacter,
-	"ucFirst":                    UppercaseFirstCharacter,
-	"camelCase":                  ToCamelCase,
-	"genResponsePayload":         genResponsePayload,
-	"genResponseTypeName":        genResponseTypeName,
-	"genResponseUnmarshal":       genResponseUnmarshal,
-	"getResponseTypeDefinitions": getResponseTypeDefinitions,
-	"toStringArray":              toStringArray,
-	"lower":                      strings.ToLower,
-	"title":                      strings.Title,
-	"stripNewLines":              stripNewLines,
-	"sanitizeGoIdentity":         SanitizeGoIdentity,
+	"genParamArgs":                 genParamArgs,
+	"genParamTypes":                genParamTypes,
+	"genParamNames":                genParamNames,
+	"genParamFmtString":            ReplacePathParamsWithStr,
+	"swaggerUriToEchoUri":          SwaggerUriToEchoUri,
+	"swaggerUriToChiUri":           SwaggerUriToChiUri,
+	"swaggerUriToGinUri":           SwaggerUriToGinUri,
+	"lcFirst":                      LowercaseFirstCharacter,
+	"ucFirst":                      UppercaseFirstCharacter,
+	"camelCase":                    ToCamelCase,
+	"genResponsePayload":           genResponsePayload,
+	"genResponseTypeName":          genResponseTypeName,
+	"genResponseUnmarshal":         genResponseUnmarshal,
+	"getResponseTypeDefinitions":   getResponseTypeDefinitions,
+	"toStringArray":                toStringArray,
+	"lower":                        strings.ToLower,
+	"title":                        strings.Title,
+	"stripNewLines":                stripNewLines,
+	"sanitizeGoIdentity":           SanitizeGoIdentity,
+	"get2xxResponseTypeDefinition": get2xxResponseTypeDefinition,
+	"hasSingle2xxJSONResponse": 	hasSingle2xxJSONResponse,
+	"hasEmpty2xxResponse": 			hasEmpty2xxResponse,
+	"hasValidRequestAndResponse": 	hasValidRequestAndResponse,
 }
